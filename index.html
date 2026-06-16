@@ -8,6 +8,8 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 
     <style>
         :root {
@@ -57,7 +59,7 @@
 
         .input-area {
             width: 100%;
-            height: 320px;
+            height: 240px;
             background-color: var(--bg-surface);
             color: var(--text-primary);
             border: 1px solid var(--border);
@@ -67,13 +69,36 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             box-sizing: border-box;
             resize: vertical;
-            line-height: 1.5;
+            line-height: 1.6;
+            margin-bottom: 16px;
+            white-space: pre-wrap;
         }
 
         .input-area:focus {
             outline: none;
             border-color: var(--primary);
             box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+
+        .file-upload-zone {
+            display: block;
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 32px 24px;
+            text-align: center;
+            background-color: rgba(30, 41, 59, 0.5);
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .file-upload-zone:hover {
+            border-color: var(--primary);
+            background-color: rgba(59, 130, 246, 0.02);
+        }
+
+        .file-input {
+            display: none;
         }
 
         .action-button {
@@ -89,7 +114,7 @@
             font-weight: 600;
             border-radius: 6px;
             cursor: pointer;
-            margin-top: 20px;
+            margin-top: 12px;
             transition: background-color 0.15s ease, transform 0.1s ease;
         }
 
@@ -105,6 +130,31 @@
             background-color: #475569;
             color: #94a3b8;
             cursor: not-allowed;
+        }
+
+        .secondary-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .secondary-button {
+            flex: 1;
+            background-color: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 12px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .secondary-button:hover {
+            color: var(--text-primary);
+            border-color: #475569;
+            background-color: rgba(255, 255, 255, 0.02);
         }
 
         .meta-container {
@@ -143,6 +193,7 @@
             font-size: 1.15rem;
             font-weight: 500;
             color: var(--text-primary);
+            white-space: pre-wrap;
         }
 
         .responses-group {
@@ -224,7 +275,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState } = React;
+        const { useState, useEffect } = React;
 
         const shuffleArray = (array) => {
             const arr = [...array];
@@ -236,52 +287,127 @@
         };
 
         function QuizApp() {
-            const [rawText, setRawText] = useState('');
-            const [questions, setQuestions] = useState([]);
-            const [currentIdx, setCurrentIdx] = useState(0);
-            const [selectedAnswer, setSelectedAnswer] = useState('');
-            const [isAnswered, setIsAnswered] = useState(false);
-            const [score, setScore] = useState(0);
-            const [quizStarted, setQuizStarted] = useState(false);
-            const [quizFinished, setQuizFinished] = useState(false);
+            const [rawText, setRawText] = useState(() => localStorage.getItem('quiz_rawText') || '');
+            const [questions, setQuestions] = useState(() => JSON.parse(localStorage.getItem('quiz_questions')) || []);
+            const [currentIdx, setCurrentIdx] = useState(() => parseInt(localStorage.getItem('quiz_currentIdx')) || 0);
+            const [selectedAnswer, setSelectedAnswer] = useState(() => localStorage.getItem('quiz_selectedAnswer') || '');
+            const [isAnswered, setIsAnswered] = useState(() => localStorage.getItem('quiz_isAnswered') === 'true');
+            const [score, setScore] = useState(() => parseInt(localStorage.getItem('quiz_score')) || 0);
+            const [quizStarted, setQuizStarted] = useState(() => localStorage.getItem('quiz_quizStarted') === 'true');
+            const [quizFinished, setQuizFinished] = useState(() => localStorage.getItem('quiz_quizFinished') === 'true');
+            const [fileName, setFileName] = useState(() => localStorage.getItem('quiz_fileName') || '');
+
+            useEffect(() => {
+                localStorage.setItem('quiz_rawText', rawText);
+                localStorage.setItem('quiz_questions', JSON.stringify(questions));
+                localStorage.setItem('quiz_currentIdx', currentIdx);
+                localStorage.setItem('quiz_selectedAnswer', selectedAnswer);
+                localStorage.setItem('quiz_isAnswered', isAnswered);
+                localStorage.setItem('quiz_score', score);
+                localStorage.setItem('quiz_quizStarted', quizStarted);
+                localStorage.setItem('quiz_quizFinished', quizFinished);
+                localStorage.setItem('quiz_fileName', fileName);
+            }, [rawText, questions, currentIdx, selectedAnswer, isAnswered, score, quizStarted, quizFinished, fileName]);
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                setFileName(file.name);
+
+                if (file.name.endsWith('.docx')) {
+                    const reader = new FileReader();
+                    reader.onload = function (event) {
+                        const arrayBuffer = event.target.result;
+                        mammoth.extractRawText({ arrayBuffer: arrayBuffer })
+                            .then((result) => {
+                                const formattedText = result.value.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+                                setRawText(formattedText);
+                            })
+                            .catch((err) => {
+                                alert("Error processing Word document.");
+                                console.error(err);
+                            });
+                    };
+                    reader.readAsArrayBuffer(file);
+                } else {
+                    const reader = new FileReader();
+                    reader.onload = function (event) {
+                        setRawText(event.target.result);
+                    };
+                    reader.readAsText(file);
+                }
+            };
 
             const parseQuestions = () => {
                 if (!rawText.trim()) return;
 
-                const rawBlocks = rawText.split(/(?=\b\d+[\)\.]\s+)/);
+                // تقسيم النص بناءً على كلمة Answer التوضيحية لفرز كل كتلة سؤال على حدة وبذكاء
+                const rawBlocks = rawText.split(/(?<=Answer\s*:\s*[a-d]\n?)/gi);
                 const parsedQuestions = [];
 
                 rawBlocks.forEach((block) => {
-                    const lines = block.split('\n').map(line => line.trim()).filter(Boolean);
+                    if (!block.trim()) return;
+
+                    // تقسيم السطور مع تنظيف الفراغات المحيطة والحفاظ على بنيتها الداخلية
+                    let lines = block.split('\n').map(line => line.trim()).filter(Boolean);
                     if (lines.length < 2) return;
 
-                    let questionText = '';
-                    const options = [];
+                    // البحث عن سطر الإجابة واستخلاصه أولاً
                     let correctAnswerLetter = '';
+                    let answerLineIdx = lines.findIndex(l => /^(answer)\s*:\s*([a-d])/i.test(l));
+                    
+                    if (answerLineIdx !== -1) {
+                        const match = lines[answerLineIdx].match(/^(answer)\s*:\s*([a-d])/i);
+                        if (match) correctAnswerLetter = match[2].toLowerCase();
+                        lines.splice(answerLineIdx, 1); // إزالة سطر الإجابة من مصفوفة الفرز لكي لا يختلط بالاختيارات
+                    }
 
+                    if (!correctAnswerLetter) return; // تخطي البلوك إذا لم يعثر على إجابة واضحة له
+
+                    let questionText = '';
+                    let rawOptions = [];
+
+                    // فحص السطور المتبقية: هل الاختيارات مدمجة في سطر واحد أم مفرودة؟
                     lines.forEach((line) => {
-                        if (/^(answer)\s*:\s*([a-d])/i.test(line)) {
-                            const match = line.match(/^(answer)\s*:\s*([a-d])/i);
-                            if (match) correctAnswerLetter = match[2].toLowerCase();
-                        }
-                        else if (/^[a-d][\)\.]\s+/i.test(line) && !line.toLowerCase().startsWith('answer')) {
-                            options.push(line);
+                        // كشف السطور المدمجة مثل: A) Control A B) Control B C) Control C
+                        if (/[A-D]\)\s+.*[A-D]\)\s+/i.test(line)) {
+                            const splitMatches = line.split(/(?=[A-D]\)\s+)/i);
+                            rawOptions.push(...splitMatches.map(o => o.trim()));
                         } 
+                        // كشف السطور الفردية التي تبدأ بحرف الترقيم المباشر
+                        else if (/^[a-d][\)\.]\s+/i.test(line)) {
+                            rawOptions.push(line);
+                        } 
+                        // إذا كان سطر بدون حرف ترقيم ولكنه ليس رأس السؤال (الأسئلة الأولى في ملفك)
+                        else if (questionText !== '' && rawOptions.length < 4 && !/^\d+[\)\.]/i.test(line)) {
+                            rawOptions.push(line);
+                        } 
+                        // تجميع نص السؤال الأساسي
                         else {
                             questionText += (questionText ? '\n' : '') + line;
                         }
                     });
 
-                    questionText = questionText.replace(/Answer\s*:\s*[a-d]/gi, '').trim();
+                    // تنظيف أي أرقام ترتيبية في بداية نص السؤال لجعله منسقًا داخل المحاكي
+                    questionText = questionText.replace(/^\d+[\)\.]\s*/, '').trim();
 
+                    // إعادة صياغة الاختيارات المكتوبة بدون حروف (النمط الأول في ملفك) لتصبح مدعومة بشكل قياسي ومقروء
+                    let finalOptions = rawOptions.map((opt, index) => {
+                        if (/^[a-d][\)\.]/i.test(opt)) return opt;
+                        const letters = ['a) ', 'b) ', 'c) ', 'd) '];
+                        return (letters[index] ? letters[index] : '') + opt;
+                    });
+
+                    // تحديد الاختيار الصحيح بمطابقة الحرف المستخرج
                     let finalCorrectOption = '';
-                    if (correctAnswerLetter && options.length > 0) {
-                        const found = options.find(opt => opt.toLowerCase().trim().startsWith(correctAnswerLetter));
+                    if (correctAnswerLetter && finalOptions.length > 0) {
+                        const found = finalOptions.find(opt => opt.toLowerCase().trim().startsWith(correctAnswerLetter));
                         if (found) finalCorrectOption = found;
                     }
 
-                    if (questionText && options.length > 0) {
-                        const randomizedOptions = shuffleArray(options);
+                    if (questionText && finalOptions.length > 0) {
+                        const randomizedOptions = shuffleArray(finalOptions);
                         parsedQuestions.push({
                             question: questionText,
                             options: randomizedOptions,
@@ -291,8 +417,7 @@
                 });
 
                 if (parsedQuestions.length > 0) {
-                    const randomizedQuestions = shuffleArray(parsedQuestions);
-                    setQuestions(randomizedQuestions);
+                    setQuestions(shuffleArray(parsedQuestions));
                     setQuizStarted(true);
                     setQuizFinished(false);
                     setCurrentIdx(0);
@@ -300,7 +425,7 @@
                     setSelectedAnswer('');
                     setIsAnswered(false);
                 } else {
-                    alert('Invalid assessment structure. Please ensure the format contains question numbers, alphanumeric choices (a, b, c, d), and corresponding answer markers.');
+                    alert('Could not find any structural questions. Please check format.');
                 }
             };
 
@@ -311,7 +436,6 @@
 
             const checkAnswer = () => {
                 if (!selectedAnswer) return;
-                
                 const currentQuestion = questions[currentIdx];
                 if (currentQuestion.correctAnswer && selectedAnswer === currentQuestion.correctAnswer) {
                     setScore(prev => prev + 1);
@@ -329,10 +453,31 @@
                 setQuizFinished(true);
             };
 
-            const handleRestart = () => {
+            const handleRestartSameQuiz = () => {
+                const remixedQuestions = questions.map(q => ({
+                    ...q,
+                    options: shuffleArray(q.options)
+                }));
+                setQuestions(shuffleArray(remixedQuestions));
+                setCurrentIdx(0);
+                setScore(0);
+                setSelectedAnswer('');
+                setIsAnswered(false);
+                setQuizFinished(false);
+                setQuizStarted(true);
+            };
+
+            const handleResetAll = () => {
+                localStorage.clear();
+                setRawText('');
+                setQuestions([]);
+                setCurrentIdx(0);
+                setSelectedAnswer('');
+                setIsAnswered(false);
+                setScore(0);
                 setQuizStarted(false);
                 setQuizFinished(false);
-                setRawText('');
+                setFileName('');
             };
 
             return (
@@ -341,14 +486,27 @@
 
                     {!quizStarted ? (
                         <div>
-                            <label className="section-label">Paste Raw Examination Dataset</label>
+                            <label className="section-label">Upload Examination File (.docx / .txt)</label>
+                            <label className="file-upload-zone">
+                                <input 
+                                    type="file" 
+                                    className="file-input" 
+                                    accept=".docx,.txt" 
+                                    onChange={handleFileUpload} 
+                                />
+                                {fileName ? `Selected: ${fileName}` : "Click to upload Word (.docx) or Text (.txt) file"}
+                            </label>
+
+                            <label className="section-label">Review / Edit Extracted Dataset Text</label>
                             <textarea
                                 className="input-area"
-                                placeholder="Paste structured questions, choices, and answer blocks directly..."
+                                placeholder="Paste or upload structured questions..."
                                 value={rawText}
                                 onChange={(e) => setRawText(e.target.value)}
                             />
-                            <button className="action-button" onClick={parseQuestions}>Initialize Randomized Assessment</button>
+                            <button className="action-button" onClick={parseQuestions} disabled={!rawText.trim()}>
+                                Initialize Randomized Assessment
+                            </button>
                         </div>
                     ) : quizFinished ? (
                         <div className="summary-view">
@@ -357,7 +515,12 @@
                                 Final Performance Score:
                                 <span className="metric-value">{score} / {questions.length}</span>
                             </div>
-                            <button className="action-button" onClick={handleRestart}>Initialize New Dataset</button>
+                            <button className="action-button" onClick={handleRestartSameQuiz}>
+                                Retake Same Quiz Again
+                            </button>
+                            <button className="action-button" style={{backgroundColor: '#475569'}} onClick={handleResetAll}>
+                                Upload New Dataset
+                            </button>
                         </div>
                     ) : (
                         <div>
@@ -412,6 +575,15 @@
                                 ) : (
                                     <button className="action-button" onClick={handleFinish}>Generate Performance Analysis</button>
                                 )}
+                            </div>
+
+                            <div className="secondary-actions">
+                                <button className="secondary-button" onClick={handleRestartSameQuiz}>
+                                    Restart This Quiz
+                                </button>
+                                <button className="secondary-button" onClick={handleResetAll}>
+                                    Clear & Start New
+                                </button>
                             </div>
                         </div>
                     )}
